@@ -10,6 +10,7 @@ fastapi = "*"
 metaphor-python = "*"
 python-dotenv = "*"
 google-cloud-logging = "*"
+uvicorn = {extras = ["standard"], version = "*"}
 
 [dev-packages]
 
