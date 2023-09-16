@@ -1,11 +1,14 @@
 import os
+from fastapi.responses import JSONResponse
 import openai
 import requests
 import logging
-from fastapi import FastAPI
+import docx2txt
+from PyPDF2 import PdfReader
+from fastapi import FastAPI, UploadFile, Form
+from bs4 import BeautifulSoup
 from starlette.responses import StreamingResponse
 from pydantic import BaseModel
-from metaphor_python import Metaphor
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 
@@ -16,10 +19,6 @@ if "GCP_PROJECT" in os.environ:
     # Instantiates a client
     client = google.cloud.logging.Client()
 
-    # Retrieves a Cloud Logging handler based on the environment
-    # you're running in and integrates the handler with the
-    # Python logging module. By default this captures all logs
-    # at INFO level and higher
     client.setup_logging()
 else:
     logging.basicConfig(level=logging.INFO)
@@ -35,7 +34,6 @@ class Context(BaseModel):
 
 
 app = FastAPI()
-client = Metaphor(api_key=os.environ.get("METAPHOR_API_KEY"))
 
 origins = [
     "*",  # origin of frontend application
@@ -50,75 +48,88 @@ app.add_middleware(
 )
 
 
-def get_user_information(linkedin_url):
-    prospeo_url = "https://api.prospeo.io/linkedin-email-finder"
-    prospeo_api_key = os.environ.get("PROSPEO_API_KEY")
+def download_webpage_content(url):
+    try:
+        response = requests.get(url)
+        output = ""
+        if response.status_code == 200:
+            html_page = response.content
+            soup = BeautifulSoup(html_page, "html.parser")
+            text = soup.find_all(text=True)
 
-    required_headers = {"Content-Type": "application/json", "X-KEY": prospeo_api_key}
+            output = ""
+            blacklist = [
+                "[document]",
+                "noscript",
+                "header",
+                "html",
+                "meta",
+                "head",
+                "input",
+                "script",
+                # there may be more elements you don't want, such as "style", etc.
+            ]
 
-    data = {"url": linkedin_url, "profile_only": True}
-
-    res = requests.post(prospeo_url, json=data, headers=required_headers)
-    user_dict = res.json()
-    user_dict = user_dict.get("response", {})
-    about = []
-    about.append(user_dict.get("full_name", ""))
-    about.append(user_dict.get("job_title", ""))
-    for i, education in enumerate(user_dict.get("education", [])):
-        date = education.get("date", {})
-        start = date.get("start", {})
-        end = date.get("end", {})
-        school = education.get("school", {})
-        about.append(
-            f"EDUCATION {i+1}: start month: {start.get('month', '')}, start year: {start.get('year', '')} - end month {end.get('month', '')}, end year: {end.get('year', '')} - {education.get('degree_name', '')} in {education.get('field_of_study')} at {school.get('name', '')}"
-        )
-    about.append(f"SKILLS: {user_dict.get('skills', '')}")
-    for i, experience in enumerate(user_dict.get("work_experience", [])):
-        date = experience.get("date", {})
-        start = date.get("start", {})
-        end = date.get("end", {})
-        company = experience.get("company", {})
-        positions = experience.get("profile_positions")
-        position = positions[0] if positions else {}
-        about.append(
-            f"EXPERIENCE {i+1}: start month: {start.get('month', '')}, start year: {start.get('year', '')} - end month {end.get('month', '')}, end year: {end.get('year', '')} - {position.get('title', '')} {position.get('employment_type')} in {position.get('location','')} at {company.get('name', '')} in this role I... {position.get('description', '')}"
-        )
-    return "\n".join(about)
+            for t in text:
+                if t.parent.name not in blacklist:
+                    output += "{} ".format(t)
+            return output
+        else:
+            print(f"Failed to download content. Status code: {response.status_code}")
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
 
 
-def get_company_information(company_name):
-    response = client.search(
-        f"Here is information all about the company {company_name}:",
-        use_autoprompt=True,
-        num_results=2,
-    )
-    contents_res = response.get_contents()
-    res = ""
-    for content in contents_res.contents:
-        res += f"\nTitle: {content.title}\nURL: {content.url}\nContent:\n{content.extract}\n"
-    return res
+def check_file_format(filename):
+    extension = filename.lower().split(".")[-1]
+    if extension == "pdf":
+        return "pdf"
+    elif extension == "docx":
+        return "docx"
+    elif extension == "txt":
+        return "txt"
+    else:
+        return "unknown"
 
 
-def clean_company_information(information, company_name):
-    my_prompt = f"Below are HTML formatted articles potentially information about the company {company_name}. Generate for me a summary of information about the company {company_name} detailing what the company does: {information}"
-    completion = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": my_prompt},
-        ],
-        n=1,
-        max_tokens=3000,
-    )
-    logging.info(completion.usage)
-    logging.info(completion.choices[0].message.content)
-    return {"name": company_name, "info": completion.choices[0].message.content}
-
-
-def generate_cover_letter(company_info, user_info):
-    my_prompt = f"Below is information about the company {company_info['name']} formatted between HTML tags which you should ignore. There is also information about a jobseeker looking to apply to roles at this company. Please generate a personalized cover letter based on the information you know about the applicant and the company. The letter should be written in the style an undergraduate university student would write. Do not use every detail of the company info or the user info just keep the relevant parts which are most likely to help the candidate stand out and get hired. Never list any information as true about the candidate that you are not directly given for example only list skills that are explicitly listed in the User Info section. This letter should be no longer than 4 or 5 paragraphs Company Info: {company_info['info']} User Info: {user_info}"
+def generate_cover_letter(user_data, company_data):
+    my_prompt = f"""
+    Below is the resume of an individual and a webpage of the job posting they are applying to. Write a cover letter for this applicant which is formatted like the outline below: 
+    
+    === Outline ===
+    Dear Hiring Manager, 
+    Paragraph 1 (Introduction)
+    Paragraphs 2-4 (Body)
+    Paragraph 5 (Conclusion)
+    Sincirely, 
+        [Applicant Name]
+    ===============
+    
+    Paragraph 1 is an introduction and should state clearly in the opening sentence the purpose for the letter and a brief professional introduction, specify why the candidate is interested in that specific position and organization, and finally provide an overview of the main strengths and skills the candidate brings to the role. 
+    
+    Paragraphs 2-4 are the body of the letter and should cite a couple of examples from the candidate's experience that supports their ability to be successful in the position or organization. Try not to simply repeat the resume in paragraph form, complement the resume by offering a little more detail about key experiences. Discuss what skills the candidate has developed and connect these back to the target role. 
+    
+    Paragraph 5 should restate succinctly the candidate's interest in the role and why they are a good candidate and thank the reader for their time and consideration.
+    
+    There should be no more than 5 paragraphs generated
+    
+    When generating your response, keep these guidelines in mind: 
+    - Focus the letter on the future and what the applicant hopes to accomplish
+    - Open the letter strong by outlining why this job is exciting to the applicant and what they bring to the table
+    - Convey Enthusiasm by making it clear why the applicant wants the job
+    - Keep it short so that it is brief enough someone can read it at a glance
+    - Don't make the letter generic, it should contain content that only this applicant could have written
+    
+    === Resume ===
+    {user_data}
+    ==============
+    
+    === Job Posting ===
+    {company_data}
+    ===================
+    """
     completion_stream = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-3.5-turbo-16k",
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": my_prompt},
@@ -139,16 +150,27 @@ async def root():
 
 
 @app.post("/generate")
-async def root(context: Context):
-    logging.info(context)
-    user_info = get_user_information(context.linkedin_profile_url)
-    company_info = get_company_information(context.company_name)
-    # clean_info = clean_company_information(company_info, context.company_name) Optional cleaning data setp
-    logging.info("Generating...")
+async def upload_file(resumeFile: UploadFile, jobpostURL: str = Form(...)):
+    print("Job Posting URL:", jobpostURL)
+    print("Resume File Name:", resumeFile.filename)
+
+    text = ""
+    file_type = check_file_format(resumeFile.filename)
+    if file_type == "pdf":
+        pdf_reader = PdfReader(resumeFile.file)
+        for page_number in range(len(pdf_reader.pages)):
+            page = pdf_reader.pages[page_number]
+            text += page.extract_text()
+    elif file_type == "docx":
+        text = docx2txt.process(resumeFile.file)
+    else:
+        print("FILE TYPE NOT SUPPORTED")
+    # Set max at 1000 tokens for info about you
+    user_data = text[:1500]
+    role_data = download_webpage_content(jobpostURL)[:3500]
+    print(role_data)
 
     return StreamingResponse(
-        generate_cover_letter(
-            {"name": context.company_name, "info": company_info}, user_info
-        ),
+        generate_cover_letter(user_data, role_data),
         media_type="text/event-stream",
     )

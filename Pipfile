@@ -11,6 +11,10 @@ metaphor-python = "*"
 python-dotenv = "*"
 google-cloud-logging = "*"
 uvicorn = {extras = ["standard"], version = "*"}
+pypdf2 = "*"
+docx2txt = "*"
+beautifulsoup4 = "*"
+fastapi-limiter = "*"
 
 [dev-packages]
 
