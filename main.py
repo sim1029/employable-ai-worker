@@ -38,8 +38,8 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,  # Allow credentials (e.g., cookies) in the request
+    allow_origins="*",
+    allow_credentials=False,  # Allow credentials (e.g., cookies) in the request
     allow_methods=["*"],  # Allow all HTTP methods, or specify specific methods
     allow_headers=["*"],  # Allow all headers, or specify specific headers
 )
@@ -91,6 +91,13 @@ async def root():
 
 @app.post("/generate")
 async def generate(context: Context):
+    # Get linkedin DATA with (Harry) code
+
+    # Clean linken DATA (Harry)
+
+    # Send user data + job description to Vertex AI (Trevor)
+
+    # Steam response from Vertex AI (Trevor)
     print(context)
 
     return StreamingResponse(
