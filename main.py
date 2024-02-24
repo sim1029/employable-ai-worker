@@ -98,7 +98,7 @@ async def generate(context: Context):
     # Send user data + job description to Vertex AI (Trevor)
 
     # Steam response from Vertex AI (Trevor)
-    print(context)
+    logging.info(context)
 
     return StreamingResponse(
         generate_mock_cover_letter(),
