@@ -8,6 +8,7 @@ from starlette.responses import StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from linkedin_api import Linkedin
 
 # Imports the Cloud Logging client library
 import google.cloud.logging
@@ -92,9 +93,33 @@ async def root():
 @app.post("/generate")
 async def generate(context: Context):
     # Get linkedin DATA with (Harry) code
+    api = Linkedin('discgolfatpitt@gmail.com', 'SlimDogTrillionaire1029')
+    split_username = context.linkedinURL.split('/')
+    if split_username[-1] == '':
+        username  = split_username[-2]
+    else: 
+        username = split_username[-1]
+    profile = api.get_profile(username)
+    userDetails = {}
+    if "summary" in profile:
+        userDetails["summary"]=profile["summary"]
+    if profile["experience"] != []:
+        if "companyName" in profile["experience"][0] and "description" in profile["experience"][0]:
+            userDetails["experience1"]=profile["experience"][0]["companyName"]+"doing "+profile["experience"][0]["description"]
+        if len(profile["experience"])>=2:
+            if "companyName" in profile["experience"][1] and "description" in profile["experience"][1]:
+                userDetails["experience2"]= profile["experience"][1]["companyName"]+"doing "+profile["experience"][1]["description"]
+    if profile["projects"] != []:
+        if "title" in profile["projects"][0] and "description" in profile["projects"][0]:
+            userDetails["project1"]=profile["projects"][0]["title"]+": "+profile["projects"][0]["description"]
+    if profile["education"] != []:
+        if "fieldOfStudy" in profile["education"][0] and "schoolName" in profile["education"][0]:
+            userDetails["education1"]=profile["education"][0]["fieldOfStudy"]+"at "+profile["education"][0]["schoolName"]
+            if len(profile["education"])>=2:
+                if "fieldOfStudy" in profile["education"][1] and "schoolName" in profile["education"][1]:
+                    userDetails["education2"]=profile["education"][1]["fieldOfStudy"]+"at "+profile["education"][1]["schoolName"]
 
-    # Clean linken DATA (Harry)
-
+    print("user_details---\n",userDetails.keys(), userDetails)
     # Send user data + job description to Vertex AI (Trevor)
 
     # Steam response from Vertex AI (Trevor)
