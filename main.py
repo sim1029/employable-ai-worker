@@ -163,7 +163,7 @@ async def generate(context: Context):
     # TODO: Include information about job role that user is seeking
     prompt = generate_prompt(
         details_as_string,
-        "Software engineer at Tesla",
+        context.jobpostDesc,
     )
     responses = model.generate_content(prompt, stream=True)
 
