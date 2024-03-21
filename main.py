@@ -64,7 +64,6 @@ def generate_prompt(user_details, job_description):
     Here is a description of the role and company I would like to write the cover letter for:
     """
     prompt = prompt_pt1 + user_details + prompt_pt2 + job_description
-    print(prompt + "\n\n\n")
 
     return prompt
 
@@ -146,6 +145,7 @@ async def generate(context: Context):
                             + profile["education"][1]["schoolName"]
                         )
     except Exception as e:
+        print("Error getting linkedin data")
         print(e)
         userDetails = {
             "summary": "",
@@ -163,7 +163,7 @@ async def generate(context: Context):
     # TODO: Include information about job role that user is seeking
     prompt = generate_prompt(
         details_as_string,
-        "Software engineer at Tesla",
+        context.jobpostDesc,
     )
     responses = model.generate_content(prompt, stream=True)
 
