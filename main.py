@@ -84,6 +84,7 @@ async def root():
 async def generate(context: Context):
     # Get linkedin DATA with (Harry) code
     try:
+        print(LINKEDIN_ACC_EMAIL, LINKEDIN_ACC_PASS)
         api = Linkedin(LINKEDIN_ACC_EMAIL, LINKEDIN_ACC_PASS)
         split_username = context.linkedinURL.split("/")
         if split_username[-1] == "":
@@ -156,6 +157,7 @@ async def generate(context: Context):
             "education2": "",
         }
 
+    print(userDetails)
     # Convert the details dict into a string so it can be passed passed to gemini
     details_as_string = user_details_to_string(userDetails)
 
